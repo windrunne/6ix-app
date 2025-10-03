@@ -115,7 +115,6 @@ class NetworkMatch(BaseModel):
     school: Optional[str] = None
     major: Optional[str] = None
     graduation_year: Optional[int] = None
-    keyword_summary: Optional[List[str]] = Field(default_factory=list)
 
 
 class NetworkQueryResponse(BaseModel):

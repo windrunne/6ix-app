@@ -466,7 +466,7 @@ class AIService:
             - School: {user_data.get('school', 'Not specified')}
             - Major: {user_data.get('major', 'Not specified')}
             - Graduation Year: {user_data.get('graduation_year', 'Not specified')}
-            - Interests/Keywords: {', '.join(user_data.get('keyword_summary', []) if isinstance(user_data.get('keyword_summary'), list) else []) or 'None'}
+            - Interests/Keywords: None (keyword_summary removed)
             - Recent Posts: {json.dumps(user_data.get('recent_posts', [])[:3])}
             
             INSTRUCTIONS:

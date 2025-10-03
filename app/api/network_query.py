@@ -137,7 +137,7 @@ async def query_network(request: NetworkQueryRequest, http_request: Request):
                 school=user_signals.get("school"),
                 major=user_signals.get("major"),
                 graduation_year=user_signals.get("graduation_year"),
-                keyword_summary=user_signals.get("keyword_summary", [])
+                keyword_summary=[]  # Removed - no longer available
             )
             matches.append(network_match)
         
@@ -163,7 +163,7 @@ async def query_network(request: NetworkQueryRequest, http_request: Request):
                     school=user_signals.get("school"),
                     major=user_signals.get("major"),
                     graduation_year=user_signals.get("graduation_year"),
-                    keyword_summary=user_signals.get("keyword_summary", [])
+                    keyword_summary=[]  # Removed - no longer available
                 )
                 matches.append(network_match)
         

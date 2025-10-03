@@ -118,7 +118,7 @@ class NetworkService:
         try:
             users_response = supabase.table("users").select(
                 "id, name, username, school, major, graduation_year, "
-                "school_type, keyword_summary, profile_photos"
+                "school_type, profile_photos"
             ).in_("id", user_ids).execute()
             
             users_data = {u["id"]: u for u in users_response.data}
@@ -148,7 +148,7 @@ class NetworkService:
                     "major": user_data.get("major"),
                     "graduation_year": user_data.get("graduation_year"),
                     "school_type": user_data.get("school_type"),
-                    "keyword_summary": user_data.get("keyword_summary", []),
+                    "keyword_summary": [],  # Removed - no longer available
                     "profile_photos": user_data.get("profile_photos", []),
                     "recent_posts": [
                         {
@@ -377,13 +377,7 @@ class NetworkService:
             for interest in criteria["interests"]:
                 interest_lower = interest.lower()
 
-                if signals.get("keyword_summary"):
-                    for keyword in signals["keyword_summary"]:
-                        if interest_lower in keyword.lower():
-                            score += 1.5
-                            reasons.append(f"interested in {interest}")
-                            break
-
+                # Search in recent posts for interest mentions
                 for post in signals.get("recent_posts", []):
                     if post.get("content") and interest_lower in post["content"].lower():
                         score += 1.0
@@ -403,12 +397,12 @@ class NetworkService:
             for keyword in criteria["keywords"]:
                 keyword_lower = keyword.lower()
 
-                if signals.get("keyword_summary"):
-                    for kw in signals["keyword_summary"]:
-                        if keyword_lower in kw.lower():
-                            score += 1.0
-                            reasons.append(f"matches '{keyword}'")
-                            break
+                # Search in recent posts for keyword mentions
+                for post in signals.get("recent_posts", []):
+                    if post.get("content") and keyword_lower in post["content"].lower():
+                        score += 1.0
+                        reasons.append(f"matches '{keyword}'")
+                        break
         
         return score, reasons
 
