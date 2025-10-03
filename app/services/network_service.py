@@ -107,7 +107,7 @@ class NetworkService:
         user_ids: List[str]
     ) -> Dict[str, Dict[str, Any]]:
         """
-        Get user signals/attributes for matching
+        Get user signals/attributes for matching using post insights data
         
         Args:
             user_ids: List of user IDs
@@ -123,11 +123,25 @@ class NetworkService:
             
             users_data = {u["id"]: u for u in users_response.data}
             
+            insights_response = supabase.table("post_insights").select(
+                "user_id, location_guess, outfit_items, objects, vibe_descriptors, "
+                "colors, activities, interests, summary, confidence_score, analyzed_at"
+            ).in_("user_id", user_ids).order(
+                "analyzed_at", desc=True
+            ).limit(100).execute()
+            
+            insights_by_user = {}
+            for insight in insights_response.data:
+                uid = insight["user_id"]
+                if uid not in insights_by_user:
+                    insights_by_user[uid] = []
+                insights_by_user[uid].append(insight)
+            
             posts_response = supabase.table("posts").select(
-                "user_id, content, category, created_at"
+                "user_id, content, category, created_at, image_url"
             ).in_("user_id", user_ids).order(
                 "created_at", desc=True
-            ).limit(100).execute()
+            ).limit(50).execute()
             
             posts_by_user = {}
             for post in posts_response.data:
@@ -139,7 +153,41 @@ class NetworkService:
             signals = {}
             for user_id in user_ids:
                 user_data = users_data.get(user_id, {})
+                user_insights = insights_by_user.get(user_id, [])
                 user_posts = posts_by_user.get(user_id, [])
+                
+                aggregated_insights = {
+                    "locations": [],
+                    "outfit_items": [],
+                    "objects": [],
+                    "vibe_descriptors": [],
+                    "colors": [],
+                    "activities": [],
+                    "interests": [],
+                    "summaries": []
+                }
+                
+                for insight in user_insights[:10]:  # Top 10 most recent insights
+                    if insight.get("location_guess"):
+                        aggregated_insights["locations"].append(insight["location_guess"])
+                    if insight.get("outfit_items"):
+                        aggregated_insights["outfit_items"].extend(insight["outfit_items"])
+                    if insight.get("objects"):
+                        aggregated_insights["objects"].extend(insight["objects"])
+                    if insight.get("vibe_descriptors"):
+                        aggregated_insights["vibe_descriptors"].extend(insight["vibe_descriptors"])
+                    if insight.get("colors"):
+                        aggregated_insights["colors"].extend(insight["colors"])
+                    if insight.get("activities"):
+                        aggregated_insights["activities"].extend(insight["activities"])
+                    if insight.get("interests"):
+                        aggregated_insights["interests"].extend(insight["interests"])
+                    if insight.get("summary"):
+                        aggregated_insights["summaries"].append(insight["summary"])
+                
+                for key in aggregated_insights:
+                    if isinstance(aggregated_insights[key], list):
+                        aggregated_insights[key] = list(set(aggregated_insights[key]))[:20]
                 
                 signals[user_id] = {
                     "name": user_data.get("name"),
@@ -148,19 +196,30 @@ class NetworkService:
                     "major": user_data.get("major"),
                     "graduation_year": user_data.get("graduation_year"),
                     "school_type": user_data.get("school_type"),
-                    "keyword_summary": [],  # Removed - no longer available
                     "profile_photos": user_data.get("profile_photos", []),
+                    "post_insights": {
+                        "locations": aggregated_insights["locations"],
+                        "outfit_items": aggregated_insights["outfit_items"],
+                        "objects": aggregated_insights["objects"],
+                        "vibe_descriptors": aggregated_insights["vibe_descriptors"],
+                        "colors": aggregated_insights["colors"],
+                        "activities": aggregated_insights["activities"],
+                        "interests": aggregated_insights["interests"],
+                        "summaries": aggregated_insights["summaries"]
+                    },
+                    # Fallback: recent posts for users without insights
                     "recent_posts": [
                         {
                             "content": p.get("content"),
                             "category": p.get("category"),
-                            "created_at": p.get("created_at")
+                            "created_at": p.get("created_at"),
+                            "image_url": p.get("image_url")
                         }
                         for p in user_posts[:5]
                     ]
                 }
             
-            logger.info(f"Retrieved signals for {len(signals)} users")
+            logger.info(f"Retrieved signals for {len(signals)} users with post insights data")
             return signals
             
         except Exception as e:
@@ -343,9 +402,10 @@ class NetworkService:
     ) -> Tuple[float, List[str]]:
         """
         Match user signals against search criteria (LEGACY - Basic keyword matching)
+        Now enhanced to use post insights data
         
         Args:
-            signals: User signals
+            signals: User signals (now includes post_insights)
             criteria: Search criteria
             
         Returns:
@@ -353,6 +413,7 @@ class NetworkService:
         """
         score = 0.0
         reasons = []
+        post_insights = signals.get("post_insights", {})
         
         if criteria.get("location"):
             location = criteria["location"].lower()
@@ -360,6 +421,12 @@ class NetworkService:
             if signals.get("school") and location in signals["school"].lower():
                 score += 2.0
                 reasons.append(f"school in {criteria['location']}")
+
+            for insight_location in post_insights.get("locations", []):
+                if location in insight_location.lower():
+                    score += 2.5
+                    reasons.append(f"posted from {insight_location}")
+                    break
 
             for post in signals.get("recent_posts", []):
                 if post.get("content") and location in post["content"].lower():
@@ -377,7 +444,18 @@ class NetworkService:
             for interest in criteria["interests"]:
                 interest_lower = interest.lower()
 
-                # Search in recent posts for interest mentions
+                for insight_interest in post_insights.get("interests", []):
+                    if interest_lower in insight_interest.lower():
+                        score += 2.0
+                        reasons.append(f"interested in {insight_interest}")
+                        break
+
+                for activity in post_insights.get("activities", []):
+                    if interest_lower in activity.lower():
+                        score += 1.5
+                        reasons.append(f"does {activity}")
+                        break
+
                 for post in signals.get("recent_posts", []):
                     if post.get("content") and interest_lower in post["content"].lower():
                         score += 1.0
@@ -387,6 +465,19 @@ class NetworkService:
         if criteria.get("objects"):
             for obj in criteria["objects"]:
                 obj_lower = obj.lower()
+                
+                for insight_obj in post_insights.get("objects", []):
+                    if obj_lower in insight_obj.lower():
+                        score += 2.0
+                        reasons.append(f"has {insight_obj}")
+                        break
+
+                for outfit_item in post_insights.get("outfit_items", []):
+                    if obj_lower in outfit_item.lower():
+                        score += 1.5
+                        reasons.append(f"wears {outfit_item}")
+                        break
+
                 for post in signals.get("recent_posts", []):
                     if post.get("content") and obj_lower in post["content"].lower():
                         score += 1.5
@@ -397,7 +488,18 @@ class NetworkService:
             for keyword in criteria["keywords"]:
                 keyword_lower = keyword.lower()
 
-                # Search in recent posts for keyword mentions
+                for vibe in post_insights.get("vibe_descriptors", []):
+                    if keyword_lower in vibe.lower():
+                        score += 1.5
+                        reasons.append(f"has {vibe} vibe")
+                        break
+
+                for activity in post_insights.get("activities", []):
+                    if keyword_lower in activity.lower():
+                        score += 1.5
+                        reasons.append(f"does {activity}")
+                        break
+
                 for post in signals.get("recent_posts", []):
                     if post.get("content") and keyword_lower in post["content"].lower():
                         score += 1.0
