@@ -59,7 +59,7 @@ class PostAnalysisRequest(BaseModel):
 
 class PostInsights(BaseModel):
     """Structured insights from post analysis"""
-    location_guess: Optional[str] = Field(None, description="Guessed location from image/caption")
+    location_guess: Optional[str] = Field(None, description="Enhanced location with detailed information")
     outfit_items: List[str] = Field(default_factory=list, description="Identified clothing/accessories")
     objects: List[str] = Field(default_factory=list, description="Identified objects/brands")
     vibe_descriptors: List[str] = Field(default_factory=list, description="Vibe/mood descriptors")
@@ -115,7 +115,8 @@ class NetworkMatch(BaseModel):
     school: Optional[str] = None
     major: Optional[str] = None
     graduation_year: Optional[int] = None
-    keyword_summary: Optional[List[str]] = Field(default_factory=list)
+    gender: Optional[str] = Field(None, description="User's gender")
+    race: Optional[str] = Field(None, description="User's race/ethnicity")
 
 
 class NetworkQueryResponse(BaseModel):
@@ -167,6 +168,7 @@ class ChatMessageRequest(BaseModel):
     user_id: str = Field(..., description="User ID sending the message")
     message: str = Field(..., description="User's message")
     post_id: Optional[str] = Field(None, description="Post ID if discussing a specific post")
+    image_url: Optional[str] = Field(None, description="Image URL if user is asking about an image")
 
 
 class ChatMessageResponse(BaseModel):
@@ -186,6 +188,7 @@ class ChatContinueRequest(BaseModel):
     thread_id: str = Field(..., description="Thread ID for conversation continuity")
     message: str = Field(..., description="User's message")
     post_id: Optional[str] = Field(None, description="Post ID if discussing a specific post")
+    image_url: Optional[str] = Field(None, description="Image URL if user is asking about an image")
 
 
 class GhostAskRequest(BaseModel):
@@ -233,6 +236,24 @@ class HealthCheckResponse(BaseModel):
     status: str
     version: str
     timestamp: datetime
+
+
+class FaceMatch(BaseModel):
+    """Face match result from image analysis"""
+    user_id: str = Field(..., description="User ID of the matched person")
+    name: str = Field(..., description="Name of the matched person")
+    username: Optional[str] = Field(None, description="Username of the matched person")
+    similarity: float = Field(..., ge=0.0, le=100.0, description="Similarity percentage")
+    confidence: float = Field(..., ge=0.0, le=100.0, description="Confidence score")
+    face_id: str = Field(..., description="Internal face ID")
+
+
+class FaceRecognitionResponse(BaseModel):
+    """Response from face recognition analysis"""
+    success: bool
+    face_count: int = Field(0, description="Number of faces detected")
+    matches: List[FaceMatch] = Field(default_factory=list, description="Matched faces")
+    error: Optional[str] = None
 
 
 class ErrorResponse(BaseModel):

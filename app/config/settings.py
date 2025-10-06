@@ -22,6 +22,14 @@ class Settings(BaseSettings):
     openai_api_key: str
     openai_model: str = "gpt-4o"
     
+    # Google Maps API
+    google_maps_api_key: str
+    
+    # AWS Rekognition
+    aws_access_key_id: str
+    aws_secret_access_key: str
+    aws_region: str = "us-east-1"
+    
     use_semantic_search: bool = True
     semantic_min_score: float = 3.0
     max_parallel_ai_requests: int = 10

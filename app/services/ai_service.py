@@ -8,6 +8,7 @@ from app.database import supabase
 from openai import AsyncOpenAI
 from app.config import settings
 from app.utils.logger import logger
+import traceback
 
 
 class AIService:
@@ -446,43 +447,67 @@ class AIService:
         user_data: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Use AI to semantically match a user against a natural language query
+        Use AI to semantically match a user against a natural language query using post insights data
         
         Args:
             query: Natural language query
-            user_data: User profile and signals data
+            user_data: User profile and signals data (now includes post_insights)
             
         Returns:
             Dictionary with match_score (0-10), match_reasons, and confidence
         """
-        try:
+        try:            
+            post_insights = user_data.get('post_insights', {})
+            recent_posts = user_data.get('recent_posts', [])
+            
             prompt = f"""
-            Determine if this user matches the following search query using semantic understanding:
+            Determine if this user matches the following search query using semantic understanding.
+            You now have access to rich post insights data from image and text analysis.
             
             QUERY: "{query}"
             
-            USER DATA:
+            USER PROFILE:
             - Name: {user_data.get('name', 'Unknown')}
             - School: {user_data.get('school', 'Not specified')}
             - Major: {user_data.get('major', 'Not specified')}
             - Graduation Year: {user_data.get('graduation_year', 'Not specified')}
-            - Interests/Keywords: {', '.join(user_data.get('keyword_summary', []) if isinstance(user_data.get('keyword_summary'), list) else []) or 'None'}
-            - Recent Posts: {json.dumps(user_data.get('recent_posts', [])[:3])}
+            - Gender: {user_data.get('gender', 'Not specified')}
+            - Race/Ethnicity: {user_data.get('race', 'Not specified')}
+            
+            POST INSIGHTS (from AI analysis of images and text):
+            - Locations: {post_insights.get('locations', [])}
+            - Outfit Items: {post_insights.get('outfit_items', [])}
+            - Objects/Brands: {post_insights.get('objects', [])}
+            - Vibe Descriptors: {post_insights.get('vibe_descriptors', [])}
+            - Colors: {post_insights.get('colors', [])}
+            - Activities: {post_insights.get('activities', [])}
+            - Interests: {post_insights.get('interests', [])}
+            - Post Summaries: {post_insights.get('summaries', [])}
+            
+            FALLBACK POSTS (if no insights available):
+            - Recent Posts: {json.dumps(recent_posts[:3])}
             
             INSTRUCTIONS:
-            1. Analyze if this user semantically matches the query
+            1. Analyze if this user semantically matches the query using BOTH text and image insights
             2. Consider:
-               - Location mentions (in school, posts, or profile)
-               - Interests and hobbies (explicit or inferred from posts)
-               - Activities and lifestyle
-               - Objects or items they have/mention
+               - Location data (from insights or posts)
+               - Visual elements (outfit items, objects, colors, activities)
+               - Vibe and mood descriptors
+               - Inferred interests from image analysis
+               - Text content from posts
                - School and academic info
+               - Demographic information (gender, race/ethnicity)
                - Temporal context (if query mentions time like "this month")
-            3. Use semantic understanding - don't just match keywords
+            3. Use semantic understanding with rich visual context:
                Examples:
-               - "coffee lover" matches someone who posts about cafes
-               - "into fashion" matches someone with outfit posts
-               - "in SF" matches someone at SF State or posting from SF
+               - "coffee lover" matches someone with cafe locations, coffee objects, or cafe activities
+               - "into fashion" matches someone with outfit items, fashion brands, or style descriptors
+               - "in SF" matches someone with SF locations or SF-related activities
+               - "sporty" matches someone with athletic activities, sports objects, or active vibes
+               - "artsy" matches someone with creative activities, art objects, or artistic vibes
+               - "chinese girl" matches someone with gender="female" and race="asian" (or "chinese" in possible_races)
+               - "guy from my school" matches someone with same school and gender="male"
+               - "asian friend" matches someone with race="asian" or "asian" in possible_races
             
             Return JSON:
             {{
@@ -490,7 +515,7 @@ class AIService:
                 "match_score": 0-10 (0=no match, 10=perfect match),
                 "match_reasons": ["reason 1", "reason 2", ...],
                 "confidence": 0.0-1.0,
-                "relevant_details": ["specific detail from profile that matches"]
+                "relevant_details": ["specific detail from insights that matches"]
             }}
             
             Be generous with matches but accurate with scoring.
@@ -502,7 +527,7 @@ class AIService:
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are an expert at semantic matching and understanding natural language queries about people."
+                        "content": "You are an expert at semantic matching using both text and visual insights to understand natural language queries about people."
                     },
                     {
                         "role": "user",
@@ -515,11 +540,12 @@ class AIService:
             )
             
             result = json.loads(response.choices[0].message.content)
+        
             return result
             
         except Exception as e:
-            logger.error(f"Error in semantic matching: {str(e)}")
-            # Return default no-match on error
+            logger.error(f" Error in semantic matching: {str(e)}")
+            
             return {
                 "is_match": False,
                 "match_score": 0,

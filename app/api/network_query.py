@@ -20,23 +20,127 @@ from app.utils.rate_limiter import (
 router = APIRouter(prefix="/api/network", tags=["Network Query"])
 
 
-@router.post("/query", response_model=NetworkQueryResponse)
+@router.post(
+    "/query", 
+    response_model=NetworkQueryResponse,
+    tags=["Network Query"],
+    summary="Query Network with AI",
+    description="Query user's network with natural language using AI semantic matching and demographic filtering",
+    responses={
+        200: {
+            "description": "Network query completed successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "success": True,
+                        "query": "who is a asian girl i know",
+                        "matches": [
+                            {
+                                "user_id": "123e4567-e89b-12d3-a456-426614174000",
+                                "name": "Sarah Chen",
+                                "username": "sarahchen",
+                                "profile_photos": ["https://example.com/photo.jpg"],
+                                "degree": 1,
+                                "why_match": "Sarah is Asian and female, matching your query criteria",
+                                "mutuals": [
+                                    {
+                                        "id": "456e7890-e89b-12d3-a456-426614174001",
+                                        "name": "John Doe",
+                                        "profile_photo": "https://example.com/john.jpg"
+                                    }
+                                ],
+                                "mutual_count": 3,
+                                "action": "offer_intro",
+                                "school": "Stanford University",
+                                "major": "Computer Science",
+                                "graduation_year": 2023,
+                                "gender": "female",
+                                "race": "asian"
+                            }
+                        ],
+                        "total_matches": 1,
+                        "has_first_degree": True,
+                        "has_second_degree": False,
+                        "error": None
+                    }
+                }
+            }
+        },
+        400: {
+            "description": "Bad request - invalid input",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "success": False,
+                        "query": "invalid query",
+                        "matches": [],
+                        "total_matches": 0,
+                        "has_first_degree": False,
+                        "has_second_degree": False,
+                        "error": "Invalid user_id format"
+                    }
+                }
+            }
+        },
+        429: {
+            "description": "Rate limit exceeded",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "success": False,
+                        "query": "who do i know",
+                        "matches": [],
+                        "total_matches": 0,
+                        "has_first_degree": False,
+                        "has_second_degree": False,
+                        "error": "Rate limit exceeded. Please try again later."
+                    }
+                }
+            }
+        }
+    }
+)
 async def query_network(request: NetworkQueryRequest, http_request: Request):
     """
-    Query user's network with natural language using AI semantic matching
+    **Query Network with AI - Semantic Network Search**
     
-    - **user_id**: User ID making the query
-    - **query**: Natural language query (e.g., "who do i know in paris?", "who likes coffee?")
-    - **max_results**: Maximum number of results to return
-    - **include_second_degree**: Include 2nd degree connections
+    Queries user's network with natural language using AI semantic matching and demographic filtering.
     
-    Uses AI to semantically understand the query and match users based on:
-    - Profile information (school, major, interests)
-    - Recent posts and content
-    - Semantic understanding (e.g., "coffee lover" matches cafe posts)
+    ### Features:
+    - **🤖 AI Semantic Understanding**: Uses OpenAI to understand natural language queries
+    - **👥 Demographic Filtering**: Supports gender and race-based queries
+    - **🔗 Connection Degrees**: Searches 1st and 2nd degree connections
+    - **🤝 Warm Intro Support**: Offers introduction options for 2nd degree matches
+    - **📊 Detailed Matching**: Provides explanations for why each person matches
     
-    Returns matches from 1st and 2nd degree connections with why they match.
-    For 2nd degree matches, offers warm intro option.
+    ### Request Parameters:
+    - **user_id** (required): UUID of the user making the query
+    - **query** (required): Natural language query (3-200 characters)
+    - **max_results** (optional): Maximum number of results (1-50, default: 10)
+    - **include_second_degree** (optional): Include 2nd degree connections (default: true)
+    
+    ### Query Examples:
+    - **Demographic**: "who is a asian girl i know", "find me a black guy"
+    - **Location**: "who do i know in paris?", "people near me"
+    - **Interests**: "who likes coffee?", "find someone into fitness"
+    - **Combined**: "asian girl who likes coffee in san francisco"
+    
+    ### Response:
+    - **matches**: Array of matched users with detailed information
+    - **why_match**: Explanation of why this person matches the query
+    - **degree**: Connection degree (1 = direct, 2 = mutual connection)
+    - **mutuals**: List of mutual connections for 2nd degree matches
+    - **action**: Suggested action (e.g., "offer_intro" for 2nd degree)
+    - **demographics**: Gender and race information when available
+    
+    ### Rate Limits:
+    - User: 30 requests per hour
+    - IP: 100 requests per hour
+    
+    ### Prerequisites:
+    - User must have network connections
+    - For demographic queries, users must have analyzed profile photos
+    - For location queries, users must have location data in posts
     """
     try:
         is_allowed, error_msg = check_user_rate_limit(
@@ -72,10 +176,8 @@ async def query_network(request: NetworkQueryRequest, http_request: Request):
                 error=error_msg_ip
             )
         
-        logger.info(f"Network query from user {request.user_id}: {request.query}")
         
         if settings.use_semantic_search:
-            logger.info("Using AI semantic search")
 
             first_degree_matches, second_degree_matches = await network_service.search_network_semantic(
                 user_id=request.user_id,
@@ -84,7 +186,6 @@ async def query_network(request: NetworkQueryRequest, http_request: Request):
                 min_match_score=settings.semantic_min_score
             )
         else:
-            logger.info("Using keyword-based search")
 
             connections = await network_service.get_user_connections(
                 request.user_id,
@@ -107,12 +208,16 @@ async def query_network(request: NetworkQueryRequest, http_request: Request):
             
             signals = await network_service.get_user_signals(all_conn_ids[:100])
             
+            if signals:
+                sample_user_id = list(signals.keys())[0]
+                sample_signals = signals[sample_user_id]
+
             criteria = await ai_service.process_network_query(
                 query=request.query,
                 user_signals=list(signals.values()),
                 connection_degree=2 if request.include_second_degree else 1
             )
-            
+
             first_degree_matches, second_degree_matches = await network_service.search_network(
                 user_id=request.user_id,
                 criteria=criteria,
@@ -121,7 +226,7 @@ async def query_network(request: NetworkQueryRequest, http_request: Request):
         
         matches = []
         
-        for match in first_degree_matches[:request.max_results]:
+        for i, match in enumerate(first_degree_matches[:request.max_results]):
             user_signals = match["signals"]
             
             network_match = NetworkMatch(
@@ -137,12 +242,13 @@ async def query_network(request: NetworkQueryRequest, http_request: Request):
                 school=user_signals.get("school"),
                 major=user_signals.get("major"),
                 graduation_year=user_signals.get("graduation_year"),
-                keyword_summary=user_signals.get("keyword_summary", [])
+                gender=user_signals.get("gender"),
+                race=user_signals.get("race")
             )
             matches.append(network_match)
         
         if not first_degree_matches and second_degree_matches:
-            for match in second_degree_matches[:request.max_results]:
+            for i, match in enumerate(second_degree_matches[:request.max_results]):
                 user_signals = match["signals"]
                 
                 mutuals = await network_service.get_mutual_connections(
@@ -163,11 +269,11 @@ async def query_network(request: NetworkQueryRequest, http_request: Request):
                     school=user_signals.get("school"),
                     major=user_signals.get("major"),
                     graduation_year=user_signals.get("graduation_year"),
-                    keyword_summary=user_signals.get("keyword_summary", [])
+                    gender=user_signals.get("gender"),
+                    race=user_signals.get("race")
                 )
                 matches.append(network_match)
         
-        logger.info(f"Found {len(matches)} matches for query: {request.query}")
         
         return NetworkQueryResponse(
             success=True,

@@ -80,7 +80,9 @@ class ChatService:
         user_id: str,
         message: str,
         thread_id: Optional[str] = None,
-        post_id: Optional[str] = None
+        post_id: Optional[str] = None,
+        image_url: Optional[str] = None,
+        face_matches: Optional[list] = None
     ) -> Dict[str, Any]:
         """
         Send message using OpenAI thread for conversation continuity
@@ -90,6 +92,8 @@ class ChatService:
             message: User's message
             thread_id: Optional existing thread ID
             post_id: Optional post ID for context
+            image_url: Optional image URL if user is asking about an image
+            face_matches: Optional list of face matches from image analysis
             
         Returns:
             Dictionary with response and thread info
@@ -103,6 +107,7 @@ class ChatService:
             
             effective_post_id = post_id or session_post_id
             
+            # Add post context if available
             if effective_post_id:
                 post_insights = await post_service.get_cached_insights(effective_post_id)
                 
@@ -112,6 +117,12 @@ class ChatService:
                     logger.info(f"Added post context for post {effective_post_id}")
                 else:
                     logger.warning(f"No cached insights found for post {effective_post_id}")
+            
+            # Add face recognition context if available
+            if face_matches:
+                face_context = self._build_face_context(face_matches)
+                full_message = face_context + "\n\n" + full_message
+                logger.info(f"Added face recognition context: {len(face_matches)} matches")
             
             response = await ai_service.send_thread_message(
                 thread_id=thread_id,
@@ -134,6 +145,35 @@ class ChatService:
         except Exception as e:
             logger.error(f"Error sending chat message: {str(e)}")
             raise
+    
+    def _build_face_context(self, face_matches: list) -> str:
+        """
+        Build context string for face recognition results
+        
+        Args:
+            face_matches: List of face match results
+            
+        Returns:
+            Context string for AI
+        """
+        if not face_matches:
+            return ""
+        
+        context_parts = ["[Face Recognition Results:]"]
+        
+        for match in face_matches:
+            name = match.get("name", "Unknown")
+            username = match.get("username", "")
+            similarity = match.get("similarity", 0)
+            confidence = match.get("confidence", 0)
+            
+            username_str = f" (@{username})" if username else ""
+            context_parts.append(f"- {name}{username_str} (similarity: {similarity:.1f}%, confidence: {confidence:.1f}%)")
+        
+        context_parts.append("")
+        context_parts.append("If the user is asking 'who is in this picture?' or similar questions, provide the names of the recognized people.")
+        
+        return "\n".join(context_parts)
     
     async def get_session_history(
         self,

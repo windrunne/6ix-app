@@ -107,7 +107,7 @@ class RateLimitConfig:
     GHOST_ASK_SEND_PER_USER_HOUR = 20  # 20 send attempts per hour per user
     
     CHAT_MESSAGE_PER_USER_HOUR = 100   # 100 messages per hour per user
-    CHAT_MESSAGE_PER_USER_MINUTE = 10  # 10 messages per minute per user
+    CHAT_MESSAGE_PER_USER_MINUTE = 3  # 3 messages per minute per user
     
     POST_ANALYSIS_PER_USER_HOUR = 30   # 30 analyses per hour per user
     POST_ANALYSIS_PER_USER_DAY = 100   # 100 analyses per day per user

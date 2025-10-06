@@ -32,6 +32,10 @@ from .schemas import (
     GhostAskResponse,
     GhostAskSendRequest,
     
+    # Face Recognition
+    FaceMatch,
+    FaceRecognitionResponse,
+    
     # Common
     HealthCheckResponse,
     ErrorResponse,
@@ -70,6 +74,10 @@ __all__ = [
     "GhostAskRequest",
     "GhostAskResponse",
     "GhostAskSendRequest",
+    
+    # Face Recognition
+    "FaceMatch",
+    "FaceRecognitionResponse",
     
     # Common
     "HealthCheckResponse",
